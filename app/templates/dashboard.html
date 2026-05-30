@@ -34,6 +34,7 @@
       <thead>
         <tr>
           <th>Task</th>
+          <th>Priority</th>
           <th>Assigned</th>
           <th>Created By</th>
           <th>Dates</th>
@@ -46,24 +47,25 @@
         {% for task in tasks %}
         <tr>
           <td>
-            <div class="task-title">{{ task.title }}</div>
+            <a class="task-title task-link" href="/tasks/{{ task.id }}">{{ task.title }}</a>
             <div class="task-desc">{{ task.description or "No description" }}</div>
-            {% if task.assigned_remarks %}
-            <div class="task-remarks">Remarks added</div>
+            {% if task.comments %}
+            <div class="task-remarks">{{ task.comments|length }} remark{{ "s" if task.comments|length != 1 else "" }}</div>
             {% endif %}
           </td>
+          <td><span class="priority-badge priority-{{ task.priority }}">{{ task.priority.title() }}</span></td>
           <td>{{ task.assignee.full_name }}</td>
           <td>{{ task.creator.full_name }}</td>
           <td>
             <div>{{ task.assignment_date.strftime("%d %b %Y") }}</div>
-            <div class="text-secondary">Due {{ task.deadline.strftime("%d %b %Y") }}</div>
+            <div class="due-label due-{{ due_state(task) }}">Due {{ task.deadline.strftime("%d %b %Y") }}</div>
           </td>
           <td><span class="status-badge status-{{ task.status }}">{{ task.status.replace("_", " ").title() }}</span></td>
           <td>{{ task.attachments|length }}</td>
           <td class="text-end">
             <div class="action-row">
               {% if can_contribute_to_task(task, current_user) %}
-              <a class="btn btn-sm btn-outline-secondary" href="/tasks/{{ task.id }}/edit">Edit</a>
+              <a class="btn btn-sm btn-outline-secondary" href="/tasks/{{ task.id }}">Open</a>
               {% endif %}
               {% if can_manage_task_details(task, current_user) %}
               <form method="post" action="/tasks/{{ task.id }}/delete" data-confirm="Delete this task?">

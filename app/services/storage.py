@@ -1,4 +1,5 @@
 from pathlib import Path
+from shutil import rmtree
 from uuid import uuid4
 
 from fastapi import UploadFile
@@ -34,3 +35,13 @@ def save_task_attachment(file: UploadFile, task_id: int, uploader: User) -> Task
         file_path=str(target.as_posix()),
         content_type=file.content_type or "application/octet-stream",
     )
+
+
+def delete_attachment_file(attachment: TaskAttachment) -> None:
+    path = Path(attachment.file_path)
+    if path.exists() and path.is_file():
+        path.unlink()
+
+    parent = path.parent
+    if parent.exists() and parent != UPLOAD_ROOT and not any(parent.iterdir()):
+        rmtree(parent)

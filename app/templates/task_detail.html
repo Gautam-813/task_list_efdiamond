@@ -1,0 +1,116 @@
+{% extends "base.html" %}
+{% set title = task.title %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Task detail</p>
+    <h1>{{ task.title }}</h1>
+  </div>
+  <div class="d-flex gap-2">
+    <a class="btn btn-outline-secondary" href="/tasks">Back</a>
+    {% if can_contribute %}
+    <a class="btn btn-dark" href="/tasks/{{ task.id }}/edit">Edit Task</a>
+    {% endif %}
+  </div>
+</div>
+
+<div class="detail-grid">
+  <section class="detail-main">
+    <div class="detail-card">
+      <div class="detail-card-head">
+        <h2>Overview</h2>
+        <div class="d-flex gap-2 flex-wrap">
+          <span class="status-badge status-{{ task.status }}">{{ task.status.replace("_", " ").title() }}</span>
+          <span class="priority-badge priority-{{ task.priority }}">{{ task.priority.title() }}</span>
+        </div>
+      </div>
+      <p class="task-long-text">{{ task.description or "No description added." }}</p>
+    </div>
+
+    <div class="detail-card">
+      <div class="detail-card-head">
+        <h2>Remarks</h2>
+      </div>
+      {% if can_contribute %}
+      <form method="post" action="/tasks/{{ task.id }}/comments" class="remark-form">
+        <textarea name="body" class="form-control" rows="3" placeholder="Add a work update or remark" required></textarea>
+        <button class="btn btn-dark">Add Remark</button>
+      </form>
+      {% endif %}
+      {% if task.comments %}
+      <div class="timeline">
+        {% for comment in task.comments %}
+        <div class="timeline-item">
+          <div class="timeline-meta">
+            <strong>{{ comment.user.full_name }}</strong>
+            <span>{{ comment.created_at.strftime("%d %b %Y, %I:%M %p") }}</span>
+          </div>
+          <p>{{ comment.body }}</p>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-secondary mb-0">No remarks added yet.</p>
+      {% endif %}
+    </div>
+
+    <div class="detail-card">
+      <div class="detail-card-head">
+        <h2>Attachments</h2>
+      </div>
+      {% if can_contribute %}
+      <form method="post" action="/tasks/{{ task.id }}/attachments" enctype="multipart/form-data" class="attachment-upload">
+        <input type="file" name="attachments" class="form-control" multiple required>
+        <button class="btn btn-secondary">Upload</button>
+      </form>
+      {% endif %}
+      {% if task.attachments %}
+      <div class="attachment-list mt-3">
+        {% for attachment in task.attachments %}
+        <div class="attachment-row">
+          <a class="attachment-item" href="/uploads/{{ task.id }}/{{ attachment.stored_filename }}" target="_blank">
+            <span>{{ attachment.original_filename }}</span>
+            <small>Uploaded by {{ attachment.uploaded_by.full_name }}</small>
+          </a>
+          {% if can_delete_attachment(attachment, current_user) %}
+          <form method="post" action="/tasks/{{ task.id }}/attachments/{{ attachment.id }}/delete" data-confirm="Delete this attachment?">
+            <button class="btn btn-sm btn-outline-danger">Delete</button>
+          </form>
+          {% endif %}
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-secondary mb-0 mt-3">No attachments uploaded yet.</p>
+      {% endif %}
+    </div>
+  </section>
+
+  <aside class="detail-side">
+    <div class="detail-card">
+      <h2>People</h2>
+      <dl class="detail-list">
+        <dt>Created By</dt>
+        <dd>{{ task.creator.full_name }}</dd>
+        <dt>Assigned To</dt>
+        <dd>{{ task.assignee.full_name }}</dd>
+      </dl>
+    </div>
+    <div class="detail-card">
+      <h2>Dates</h2>
+      <dl class="detail-list">
+        <dt>Assigned</dt>
+        <dd>{{ task.assignment_date.strftime("%d %b %Y") }}</dd>
+        <dt>Deadline</dt>
+        <dd><span class="due-label due-{{ due_state }}">{{ task.deadline.strftime("%d %b %Y") }}</span></dd>
+      </dl>
+    </div>
+    {% if can_manage_details %}
+    <form method="post" action="/tasks/{{ task.id }}/delete" data-confirm="Delete this task?" class="detail-card">
+      <h2>Danger Zone</h2>
+      <button class="btn btn-outline-danger w-100">Delete Task</button>
+    </form>
+    {% endif %}
+  </aside>
+</div>
+{% endblock %}

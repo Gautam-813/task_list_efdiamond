@@ -8,13 +8,14 @@ from app.core.security import hash_password
 from app.database import get_db
 from app.dependencies import redirect_if_unauthenticated
 from app.main_templates import templates
-from app.models.task import Task, TaskAttachment
+from app.models.task import Task, TaskAttachment, TaskComment
 from app.models.user import User
-from app.services.storage import save_task_attachment
+from app.services.storage import delete_attachment_file, save_task_attachment
 
 router = APIRouter()
 
 TASK_STATUSES = ["pending", "in_progress", "completed", "blocked"]
+TASK_PRIORITIES = ["low", "medium", "high", "urgent"]
 
 
 def can_manage_task_details(task: Task, user: User) -> bool:
@@ -27,6 +28,25 @@ def can_contribute_to_task(task: Task, user: User) -> bool:
 
 def can_edit_assigned_remarks(task: Task, user: User) -> bool:
     return user.role == "admin" or task.assigned_to_id == user.id
+
+
+def can_delete_attachment(attachment: TaskAttachment, user: User) -> bool:
+    return (
+        user.role == "admin"
+        or attachment.uploaded_by_id == user.id
+        or attachment.task.created_by_id == user.id
+    )
+
+
+def due_state(task: Task) -> str:
+    today = date.today()
+    if task.status == "completed":
+        return "done"
+    if task.deadline < today:
+        return "overdue"
+    if task.deadline == today:
+        return "today"
+    return "upcoming"
 
 
 def attach_uploaded_files(
@@ -58,6 +78,7 @@ def task_dashboard(
         joinedload(Task.creator),
         joinedload(Task.assignee),
         joinedload(Task.attachments).joinedload(TaskAttachment.uploaded_by),
+        joinedload(Task.comments).joinedload(TaskComment.user),
     )
     if view == "assigned_to_me":
         query = query.filter(Task.assigned_to_id == current_user.id)
@@ -82,6 +103,7 @@ def task_dashboard(
             "statuses": TASK_STATUSES,
             "can_manage_task_details": can_manage_task_details,
             "can_contribute_to_task": can_contribute_to_task,
+            "due_state": due_state,
         },
     )
 
@@ -100,6 +122,7 @@ def new_task_page(request: Request, db: Session = Depends(get_db)):
             "task": None,
             "users": users,
             "statuses": TASK_STATUSES,
+            "priorities": TASK_PRIORITIES,
             "today": date.today(),
             "form_action": "/tasks/new",
             "can_manage_details": True,
@@ -118,6 +141,7 @@ def create_task(
     deadline: date = Form(...),
     assigned_to_id: int = Form(...),
     task_status: str = Form(...),
+    priority: str = Form("medium"),
     attachments: list[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
 ):
@@ -127,6 +151,8 @@ def create_task(
 
     if task_status not in TASK_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid task status")
+    if priority not in TASK_PRIORITIES:
+        raise HTTPException(status_code=400, detail="Invalid task priority")
 
     assignee = db.query(User).filter(User.id == assigned_to_id, User.is_active.is_(True)).first()
     if not assignee:
@@ -140,6 +166,7 @@ def create_task(
         assigned_to_id=assigned_to_id,
         created_by_id=current_user.id,
         status=task_status,
+        priority=priority,
     )
     db.add(task)
     db.commit()
@@ -147,6 +174,41 @@ def create_task(
     attach_uploaded_files(db, task, current_user, attachments)
     db.commit()
     return RedirectResponse(url="/tasks", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/tasks/{task_id}")
+def task_detail_page(task_id: int, request: Request, db: Session = Depends(get_db)):
+    current_user = redirect_if_unauthenticated(request, db)
+    if isinstance(current_user, RedirectResponse):
+        return current_user
+
+    task = (
+        db.query(Task)
+        .options(
+            joinedload(Task.creator),
+            joinedload(Task.assignee),
+            joinedload(Task.attachments).joinedload(TaskAttachment.uploaded_by),
+            joinedload(Task.comments).joinedload(TaskComment.user),
+        )
+        .filter(Task.id == task_id)
+        .first()
+    )
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+
+    return templates.TemplateResponse(
+        "task_detail.html",
+        {
+            "request": request,
+            "current_user": current_user,
+            "task": task,
+            "can_manage_details": can_manage_task_details(task, current_user),
+            "can_contribute": can_contribute_to_task(task, current_user),
+            "can_edit_remarks": can_edit_assigned_remarks(task, current_user),
+            "can_delete_attachment": can_delete_attachment,
+            "due_state": due_state(task),
+        },
+    )
 
 
 @router.get("/tasks/{task_id}/edit")
@@ -175,6 +237,7 @@ def edit_task_page(task_id: int, request: Request, db: Session = Depends(get_db)
             "task": task,
             "users": users,
             "statuses": TASK_STATUSES,
+            "priorities": TASK_PRIORITIES,
             "today": date.today(),
             "form_action": f"/tasks/{task.id}/edit",
             "can_manage_details": can_manage_task_details(task, current_user),
@@ -194,6 +257,7 @@ def update_task(
     deadline: date | None = Form(None),
     assigned_to_id: int | None = Form(None),
     task_status: str = Form(...),
+    priority: str | None = Form(None),
     assigned_remarks: str | None = Form(None),
     attachments: list[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
@@ -213,6 +277,8 @@ def update_task(
     if can_manage_task_details(task, current_user):
         if not title or not assignment_date or not deadline or not assigned_to_id:
             raise HTTPException(status_code=400, detail="Missing task details")
+        if not priority or priority not in TASK_PRIORITIES:
+            raise HTTPException(status_code=400, detail="Invalid task priority")
 
         assignee = (
             db.query(User)
@@ -227,13 +293,88 @@ def update_task(
         task.assignment_date = assignment_date
         task.deadline = deadline
         task.assigned_to_id = assigned_to_id
+        task.priority = priority
 
     task.status = task_status
     if can_edit_assigned_remarks(task, current_user):
         task.assigned_remarks = (assigned_remarks or "").strip()
     attach_uploaded_files(db, task, current_user, attachments)
     db.commit()
-    return RedirectResponse(url="/tasks", status_code=status.HTTP_303_SEE_OTHER)
+    return RedirectResponse(url=f"/tasks/{task.id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/tasks/{task_id}/comments")
+def add_task_comment(
+    task_id: int,
+    request: Request,
+    body: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    current_user = redirect_if_unauthenticated(request, db)
+    if isinstance(current_user, RedirectResponse):
+        return current_user
+
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if not can_contribute_to_task(task, current_user):
+        raise HTTPException(status_code=403, detail="You cannot add remarks to this task")
+
+    comment_body = body.strip()
+    if comment_body:
+        db.add(TaskComment(task_id=task.id, user_id=current_user.id, body=comment_body))
+        db.commit()
+    return RedirectResponse(url=f"/tasks/{task.id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/tasks/{task_id}/attachments")
+def add_task_attachment(
+    task_id: int,
+    request: Request,
+    attachments: list[UploadFile] = File(default=[]),
+    db: Session = Depends(get_db),
+):
+    current_user = redirect_if_unauthenticated(request, db)
+    if isinstance(current_user, RedirectResponse):
+        return current_user
+
+    task = db.query(Task).filter(Task.id == task_id).first()
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if not can_contribute_to_task(task, current_user):
+        raise HTTPException(status_code=403, detail="You cannot upload to this task")
+
+    attach_uploaded_files(db, task, current_user, attachments)
+    db.commit()
+    return RedirectResponse(url=f"/tasks/{task.id}", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.post("/tasks/{task_id}/attachments/{attachment_id}/delete")
+def delete_task_attachment(
+    task_id: int,
+    attachment_id: int,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    current_user = redirect_if_unauthenticated(request, db)
+    if isinstance(current_user, RedirectResponse):
+        return current_user
+
+    attachment = (
+        db.query(TaskAttachment)
+        .options(joinedload(TaskAttachment.task))
+        .filter(TaskAttachment.id == attachment_id, TaskAttachment.task_id == task_id)
+        .first()
+    )
+    if not attachment:
+        raise HTTPException(status_code=404, detail="Attachment not found")
+    if not can_delete_attachment(attachment, current_user):
+        raise HTTPException(status_code=403, detail="You cannot delete this attachment")
+
+    delete_attachment_file(attachment)
+    db.delete(attachment)
+    db.commit()
+    return RedirectResponse(url=f"/tasks/{task_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.post("/tasks/{task_id}/delete")

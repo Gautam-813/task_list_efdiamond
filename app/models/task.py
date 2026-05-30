@@ -16,6 +16,7 @@ class Task(Base):
     assignment_date: Mapped[date] = mapped_column(Date)
     deadline: Mapped[date] = mapped_column(Date)
     status: Mapped[str] = mapped_column(String(30), default="pending", index=True)
+    priority: Mapped[str] = mapped_column(String(20), default="medium", index=True)
     created_by_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     assigned_to_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
     created_at: Mapped[datetime] = mapped_column(
@@ -31,6 +32,12 @@ class Task(Base):
     assignee = relationship("User", back_populates="assigned_tasks", foreign_keys=[assigned_to_id])
     attachments = relationship(
         "TaskAttachment", back_populates="task", cascade="all, delete-orphan"
+    )
+    comments = relationship(
+        "TaskComment",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="TaskComment.created_at.desc()",
     )
 
 
@@ -50,3 +57,18 @@ class TaskAttachment(Base):
 
     task = relationship("Task", back_populates="attachments")
     uploaded_by = relationship("User")
+
+
+class TaskComment(Base):
+    __tablename__ = "task_comments"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    body: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+    task = relationship("Task", back_populates="comments")
+    user = relationship("User")

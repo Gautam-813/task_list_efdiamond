@@ -43,6 +43,14 @@
         {% endfor %}
       </select>
     </div>
+    <div class="col-md-6">
+      <label class="form-label">Priority</label>
+      <select name="priority" class="form-select" {% if can_manage_details %}required{% else %}disabled{% endif %}>
+        {% for item in priorities %}
+        <option value="{{ item }}" {% if task and task.priority == item %}selected{% elif not task and item == "medium" %}selected{% endif %}>{{ item.title() }}</option>
+        {% endfor %}
+      </select>
+    </div>
     {% if task %}
     <div class="col-12">
       <label class="form-label">Assigned Person Remarks</label>

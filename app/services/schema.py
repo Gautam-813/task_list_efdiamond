@@ -15,3 +15,7 @@ def ensure_sqlite_schema(engine) -> None:
             connection.execute(
                 text("ALTER TABLE tasks ADD COLUMN assigned_remarks TEXT DEFAULT ''")
             )
+        if "priority" not in task_columns:
+            connection.execute(
+                text("ALTER TABLE tasks ADD COLUMN priority VARCHAR(20) DEFAULT 'medium'")
+            )
