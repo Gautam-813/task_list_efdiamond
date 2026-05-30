@@ -1,15 +1,13 @@
 from pathlib import Path
-from shutil import rmtree
 from uuid import uuid4
 
+import cloudinary
+import cloudinary.uploader
 from fastapi import HTTPException, UploadFile, status
 
 from app.core.config import settings
 from app.models.task import TaskAttachment
 from app.models.user import User
-
-
-UPLOAD_ROOT = Path("app/uploads")
 
 ALLOWED_CONTENT_TYPES: set[str] = {
     "image/jpeg",
@@ -36,6 +34,13 @@ BLOCKED_EXTENSIONS: set[str] = {
     ".vbs", ".jse", ".wsf", ".js", ".jar", ".php", ".asp", ".aspx",
     ".cgi", ".pl", ".py", ".rb",
 }
+
+cloudinary.config(
+    cloud_name=settings.cloudinary_cloud_name,
+    api_key=settings.cloudinary_api_key,
+    api_secret=settings.cloudinary_api_secret,
+    secure=True,
+)
 
 
 def _validate_upload(file: UploadFile) -> None:
@@ -70,33 +75,32 @@ def save_task_attachment(file: UploadFile, task_id: int, uploader: User) -> Task
 
     _validate_upload(file)
 
-    task_dir = UPLOAD_ROOT / str(task_id)
-    task_dir.mkdir(parents=True, exist_ok=True)
-
     original_filename = Path(file.filename).name
     suffix = Path(original_filename).suffix
-    stored_filename = f"{uuid4().hex}{suffix}"
-    target = task_dir / stored_filename
+    public_id = f"task_{task_id}/{uuid4().hex}"
 
-    with target.open("wb") as buffer:
-        while chunk := file.file.read(1024 * 1024):
-            buffer.write(chunk)
+    result = cloudinary.uploader.upload(
+        file.file,
+        public_id=public_id,
+        resource_type="auto",
+    )
 
     return TaskAttachment(
         task_id=task_id,
         uploaded_by_id=uploader.id,
         original_filename=original_filename,
-        stored_filename=stored_filename,
-        file_path=str(target.as_posix()),
-        content_type=file.content_type or "application/octet-stream",
+        stored_filename=public_id,
+        file_path=result["secure_url"],
+        content_type=file.content_type or result.get("resource_type", "application/octet-stream"),
     )
 
 
 def delete_attachment_file(attachment: TaskAttachment) -> None:
-    path = Path(attachment.file_path)
-    if path.exists() and path.is_file():
-        path.unlink()
-
-    parent = path.parent
-    if parent.exists() and parent != UPLOAD_ROOT and not any(parent.iterdir()):
-        rmtree(parent)
+    if not attachment.stored_filename:
+        return
+    for resource_type in ("image", "raw", "video"):
+        try:
+            cloudinary.uploader.destroy(attachment.stored_filename, resource_type=resource_type)
+            return
+        except Exception:
+            pass

@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     password_min_length: int = 8
     login_rate_limit_attempts: int = 5
     login_rate_limit_window_minutes: int = 15
+    cloudinary_cloud_name: str = ""
+    cloudinary_api_key: str = ""
+    cloudinary_api_secret: str = ""
 
     model_config = {"env_file": ".env", "env_file_encoding": "utf-8"}
 

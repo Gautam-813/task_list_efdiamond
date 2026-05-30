@@ -69,7 +69,7 @@
       <div class="attachment-list">
         <div class="attachment-title">Attachments</div>
         {% for attachment in task.attachments %}
-        <a class="attachment-item" href="/uploads/{{ task.id }}/{{ attachment.stored_filename }}" target="_blank">
+        <a class="attachment-item" href="{{ attachment.file_path }}" target="_blank">
           <span>{{ attachment.original_filename }}</span>
           <small>Uploaded by {{ attachment.uploaded_by.full_name }}</small>
         </a>

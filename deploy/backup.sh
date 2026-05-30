@@ -29,13 +29,6 @@ elif echo "$DB_URL" | grep -q "postgresql"; then
     echo "    PostgreSQL dump created."
 fi
 
-echo "==> Backing up uploads..."
-UPLOADS_DIR="${APP_DIR}/app/uploads"
-if [ -d "$UPLOADS_DIR" ]; then
-    tar -czf "${BACKUP_PATH}/uploads.tar.gz" -C "${APP_DIR}/app" uploads
-    echo "    Uploads archived."
-fi
-
 echo "==> Backing up .env..."
 if [ -f "${APP_DIR}/.env" ]; then
     cp "${APP_DIR}/.env" "${BACKUP_PATH}/.env"

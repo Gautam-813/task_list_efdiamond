@@ -1,3 +1,4 @@
+cloudinary
 fastapi
 uvicorn[standard]
 sqlalchemy
