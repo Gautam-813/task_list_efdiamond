@@ -7,6 +7,14 @@ from app.database import get_db
 from app.models.user import User
 
 
+CSRF_COOKIE = "csrf_token"
+
+
+def validate_csrf(form_token: str | None, cookie_token: str | None) -> None:
+    if not cookie_token or not form_token or cookie_token != form_token:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="CSRF validation failed")
+
+
 def get_current_user(request: Request, db: Session = Depends(get_db)) -> User:
     token = request.cookies.get("access_token")
     if not token:

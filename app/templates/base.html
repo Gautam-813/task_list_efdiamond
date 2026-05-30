@@ -24,7 +24,9 @@
         </ul>
         <div class="d-flex align-items-center gap-3">
           <span class="user-pill">{{ current_user.full_name }}</span>
+          <a class="btn btn-sm btn-outline-secondary" href="/profile/change-password">Password</a>
           <form method="post" action="/logout" class="m-0">
+            <input type="hidden" name="csrf_token" value="{{ request.cookies.get('csrf_token', '') }}">
             <button class="btn btn-sm btn-outline-secondary">Logout</button>
           </form>
         </div>

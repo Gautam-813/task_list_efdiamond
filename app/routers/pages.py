@@ -5,11 +5,11 @@ from fastapi.responses import RedirectResponse
 from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
-from app.core.security import hash_password
+from app.core.security import hash_password, validate_password_strength, verify_password
 from app.database import get_db
-from app.dependencies import redirect_if_unauthenticated
+from app.dependencies import CSRF_COOKIE, redirect_if_unauthenticated, validate_csrf
 from app.main_templates import templates
-from app.models.task import Task, TaskAttachment, TaskComment
+from app.models.task import Task, TaskActivityLog, TaskAttachment, TaskComment
 from app.models.user import User
 from app.services.storage import delete_attachment_file, save_task_attachment
 
@@ -53,17 +53,24 @@ def due_state(task: Task) -> str:
 
 def attach_uploaded_files(
     db: Session, task: Task, current_user: User, attachments: list[UploadFile]
-) -> None:
+) -> list[TaskAttachment]:
+    created: list[TaskAttachment] = []
     for file in attachments:
         attachment = save_task_attachment(file, task.id, current_user)
         if attachment:
             db.add(attachment)
+            created.append(attachment)
+    return created
 
 
 def parse_filter_id(value: str) -> int | None:
     if not value:
         return None
     return int(value) if value.isdigit() else None
+
+
+def log_activity(db: Session, task: Task, user: User, action: str) -> None:
+    db.add(TaskActivityLog(task_id=task.id, user_id=user.id, action=action))
 
 
 @router.get("/")
@@ -193,6 +200,7 @@ def new_task_page(request: Request, db: Session = Depends(get_db)):
 @router.post("/tasks/new")
 def create_task(
     request: Request,
+    csrf_token: str = Form(""),
     title: str = Form(...),
     description: str = Form(""),
     assignment_date: date = Form(...),
@@ -206,6 +214,7 @@ def create_task(
     current_user = redirect_if_unauthenticated(request, db)
     if isinstance(current_user, RedirectResponse):
         return current_user
+    validate_csrf(csrf_token, request.cookies.get(CSRF_COOKIE))
 
     if task_status not in TASK_STATUSES:
         raise HTTPException(status_code=400, detail="Invalid task status")
@@ -229,7 +238,10 @@ def create_task(
     db.add(task)
     db.commit()
     db.refresh(task)
-    attach_uploaded_files(db, task, current_user, attachments)
+    log_activity(db, task, current_user, "created the task")
+    created_attachments = attach_uploaded_files(db, task, current_user, attachments)
+    for att in created_attachments:
+        log_activity(db, task, current_user, f"uploaded {att.original_filename}")
     db.commit()
     return RedirectResponse(url="/tasks", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -247,6 +259,7 @@ def task_detail_page(task_id: int, request: Request, db: Session = Depends(get_d
             joinedload(Task.assignee),
             joinedload(Task.attachments).joinedload(TaskAttachment.uploaded_by),
             joinedload(Task.comments).joinedload(TaskComment.user),
+            joinedload(Task.activity_logs).joinedload(TaskActivityLog.user),
         )
         .filter(Task.id == task_id)
         .first()
@@ -309,6 +322,7 @@ def edit_task_page(task_id: int, request: Request, db: Session = Depends(get_db)
 def update_task(
     task_id: int,
     request: Request,
+    csrf_token: str = Form(""),
     title: str | None = Form(None),
     description: str | None = Form(None),
     assignment_date: date | None = Form(None),
@@ -323,6 +337,7 @@ def update_task(
     current_user = redirect_if_unauthenticated(request, db)
     if isinstance(current_user, RedirectResponse):
         return current_user
+    validate_csrf(csrf_token, request.cookies.get(CSRF_COOKIE))
 
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
@@ -353,10 +368,32 @@ def update_task(
         task.assigned_to_id = assigned_to_id
         task.priority = priority
 
+    old_status = task.status
+    old_deadline = task.deadline
+    old_assignee_id = task.assigned_to_id
+
     task.status = task_status
     if can_edit_assigned_remarks(task, current_user):
         task.assigned_remarks = (assigned_remarks or "").strip()
-    attach_uploaded_files(db, task, current_user, attachments)
+
+    if task.status != old_status:
+        log_activity(db, task, current_user, f"changed status from {old_status} to {task.status}")
+    if task.deadline != old_deadline:
+        log_activity(
+            db, task, current_user,
+            f"changed deadline from {old_deadline.isoformat()} to {task.deadline.isoformat()}",
+        )
+    if task.assigned_to_id != old_assignee_id:
+        old_assignee = db.query(User).filter(User.id == old_assignee_id).first()
+        new_assignee = db.query(User).filter(User.id == task.assigned_to_id).first()
+        log_activity(
+            db, task, current_user,
+            f"reassigned from {old_assignee.full_name if old_assignee else 'unknown'} to {new_assignee.full_name if new_assignee else 'unknown'}",
+        )
+
+    created_attachments = attach_uploaded_files(db, task, current_user, attachments)
+    for att in created_attachments:
+        log_activity(db, task, current_user, f"uploaded {att.original_filename}")
     db.commit()
     return RedirectResponse(url=f"/tasks/{task.id}", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -365,12 +402,14 @@ def update_task(
 def add_task_comment(
     task_id: int,
     request: Request,
+    csrf_token: str = Form(""),
     body: str = Form(...),
     db: Session = Depends(get_db),
 ):
     current_user = redirect_if_unauthenticated(request, db)
     if isinstance(current_user, RedirectResponse):
         return current_user
+    validate_csrf(csrf_token, request.cookies.get(CSRF_COOKIE))
 
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
@@ -381,6 +420,7 @@ def add_task_comment(
     comment_body = body.strip()
     if comment_body:
         db.add(TaskComment(task_id=task.id, user_id=current_user.id, body=comment_body))
+        log_activity(db, task, current_user, "added a remark")
         db.commit()
     return RedirectResponse(url=f"/tasks/{task.id}", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -389,12 +429,14 @@ def add_task_comment(
 def add_task_attachment(
     task_id: int,
     request: Request,
+    csrf_token: str = Form(""),
     attachments: list[UploadFile] = File(default=[]),
     db: Session = Depends(get_db),
 ):
     current_user = redirect_if_unauthenticated(request, db)
     if isinstance(current_user, RedirectResponse):
         return current_user
+    validate_csrf(csrf_token, request.cookies.get(CSRF_COOKIE))
 
     task = db.query(Task).filter(Task.id == task_id).first()
     if not task:
@@ -402,7 +444,9 @@ def add_task_attachment(
     if not can_contribute_to_task(task, current_user):
         raise HTTPException(status_code=403, detail="You cannot upload to this task")
 
-    attach_uploaded_files(db, task, current_user, attachments)
+    created_attachments = attach_uploaded_files(db, task, current_user, attachments)
+    for att in created_attachments:
+        log_activity(db, task, current_user, f"uploaded {att.original_filename}")
     db.commit()
     return RedirectResponse(url=f"/tasks/{task.id}", status_code=status.HTTP_303_SEE_OTHER)
 
@@ -412,11 +456,13 @@ def delete_task_attachment(
     task_id: int,
     attachment_id: int,
     request: Request,
+    csrf_token: str = Form(""),
     db: Session = Depends(get_db),
 ):
     current_user = redirect_if_unauthenticated(request, db)
     if isinstance(current_user, RedirectResponse):
         return current_user
+    validate_csrf(csrf_token, request.cookies.get(CSRF_COOKIE))
 
     attachment = (
         db.query(TaskAttachment)
@@ -429,17 +475,81 @@ def delete_task_attachment(
     if not can_delete_attachment(attachment, current_user):
         raise HTTPException(status_code=403, detail="You cannot delete this attachment")
 
+    filename = attachment.original_filename
     delete_attachment_file(attachment)
     db.delete(attachment)
+    log_activity(db, attachment.task, current_user, f"deleted {filename}")
     db.commit()
     return RedirectResponse(url=f"/tasks/{task_id}", status_code=status.HTTP_303_SEE_OTHER)
 
 
-@router.post("/tasks/{task_id}/delete")
-def delete_task(task_id: int, request: Request, db: Session = Depends(get_db)):
+@router.get("/profile/change-password")
+def change_password_page(request: Request, db: Session = Depends(get_db)):
     current_user = redirect_if_unauthenticated(request, db)
     if isinstance(current_user, RedirectResponse):
         return current_user
+
+    return templates.TemplateResponse(
+        "change_password.html",
+        {"request": request, "current_user": current_user, "error": None, "success": None},
+    )
+
+
+@router.post("/profile/change-password")
+def change_password(
+    request: Request,
+    csrf_token: str = Form(""),
+    current_password: str = Form(...),
+    new_password: str = Form(...),
+    confirm_password: str = Form(...),
+    db: Session = Depends(get_db),
+):
+    current_user = redirect_if_unauthenticated(request, db)
+    if isinstance(current_user, RedirectResponse):
+        return current_user
+    validate_csrf(csrf_token, request.cookies.get(CSRF_COOKIE))
+
+    if not verify_password(current_password, current_user.password_hash):
+        return templates.TemplateResponse(
+            "change_password.html",
+            {"request": request, "current_user": current_user, "error": "Current password is incorrect.", "success": None},
+            status_code=400,
+        )
+
+    if new_password != confirm_password:
+        return templates.TemplateResponse(
+            "change_password.html",
+            {"request": request, "current_user": current_user, "error": "New passwords do not match.", "success": None},
+            status_code=400,
+        )
+
+    pw_error = validate_password_strength(new_password)
+    if pw_error:
+        return templates.TemplateResponse(
+            "change_password.html",
+            {"request": request, "current_user": current_user, "error": pw_error, "success": None},
+            status_code=400,
+        )
+
+    current_user.password_hash = hash_password(new_password)
+    db.commit()
+    return templates.TemplateResponse(
+        "change_password.html",
+        {"request": request, "current_user": current_user, "error": None, "success": "Password changed successfully."},
+    )
+
+
+@router.post("/tasks/{task_id}/delete")
+def delete_task(
+    task_id: int,
+    request: Request,
+    csrf_token: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    current_user = redirect_if_unauthenticated(request, db)
+    if isinstance(current_user, RedirectResponse):
+        return current_user
+    validate_csrf(csrf_token, request.cookies.get(CSRF_COOKIE))
 
     task = db.query(Task).filter(Task.id == task_id).first()
     if task and not can_manage_task_details(task, current_user):
@@ -468,6 +578,7 @@ def users_page(request: Request, db: Session = Depends(get_db)):
 @router.post("/admin/users")
 def create_user(
     request: Request,
+    csrf_token: str = Form(""),
     username: str = Form(...),
     full_name: str = Form(...),
     password: str = Form(...),
@@ -478,6 +589,7 @@ def create_user(
     current_user = redirect_if_unauthenticated(request, db)
     if isinstance(current_user, RedirectResponse):
         return current_user
+    validate_csrf(csrf_token, request.cookies.get(CSRF_COOKIE))
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
@@ -506,6 +618,14 @@ def create_user(
             status_code=400,
         )
 
+    pw_error = validate_password_strength(password)
+    if pw_error:
+        return templates.TemplateResponse(
+            "admin_users.html",
+            {"request": request, "current_user": current_user, "users": users, "error": pw_error},
+            status_code=400,
+        )
+
     user = User(
         username=username.strip(),
         full_name=full_name.strip(),
@@ -516,3 +636,71 @@ def create_user(
     db.add(user)
     db.commit()
     return RedirectResponse(url="/admin/users", status_code=status.HTTP_303_SEE_OTHER)
+
+
+@router.get("/admin/users/{user_id}/edit")
+def edit_user_page(user_id: int, request: Request, db: Session = Depends(get_db)):
+    current_user = redirect_if_unauthenticated(request, db)
+    if isinstance(current_user, RedirectResponse):
+        return current_user
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    return templates.TemplateResponse(
+        "user_edit.html",
+        {"request": request, "current_user": current_user, "edit_user": user, "error": None, "success": None},
+    )
+
+
+@router.post("/admin/users/{user_id}/edit")
+def update_user(
+    user_id: int,
+    request: Request,
+    csrf_token: str = Form(""),
+    full_name: str = Form(...),
+    role: str = Form(...),
+    is_active: str | None = Form(None),
+    new_password: str = Form(""),
+    db: Session = Depends(get_db),
+):
+    current_user = redirect_if_unauthenticated(request, db)
+    if isinstance(current_user, RedirectResponse):
+        return current_user
+    validate_csrf(csrf_token, request.cookies.get(CSRF_COOKIE))
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    if role not in ["admin", "user"]:
+        return templates.TemplateResponse(
+            "user_edit.html",
+            {"request": request, "current_user": current_user, "edit_user": user, "error": "Invalid role selected.", "success": None},
+            status_code=400,
+        )
+
+    user.full_name = full_name.strip()
+    user.role = role
+    user.is_active = is_active == "on"
+
+    if new_password.strip():
+        pw_error = validate_password_strength(new_password.strip())
+        if pw_error:
+            return templates.TemplateResponse(
+                "user_edit.html",
+                {"request": request, "current_user": current_user, "edit_user": user, "error": pw_error, "success": None},
+                status_code=400,
+            )
+        user.password_hash = hash_password(new_password.strip())
+
+    db.commit()
+    return templates.TemplateResponse(
+        "user_edit.html",
+        {"request": request, "current_user": current_user, "edit_user": user, "error": None, "success": "User updated successfully."},
+    )

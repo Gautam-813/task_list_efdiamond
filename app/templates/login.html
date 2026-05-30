@@ -12,6 +12,7 @@
     <div class="alert alert-danger">{{ error }}</div>
     {% endif %}
     <form method="post" action="/login" class="vstack gap-3">
+      <input type="hidden" name="csrf_token" value="{{ request.cookies.get('csrf_token', '') }}">
       <div>
         <label class="form-label">Username</label>
         <input name="username" class="form-control" autocomplete="username" required>

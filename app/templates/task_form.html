@@ -11,6 +11,7 @@
 
 <section class="form-surface">
   <form method="post" action="{{ form_action }}" class="row g-3" enctype="multipart/form-data">
+    <input type="hidden" name="csrf_token" value="{{ request.cookies.get('csrf_token', '') }}">
     <div class="col-12">
       <label class="form-label">Title</label>
       <input name="title" class="form-control" value="{{ task.title if task else '' }}" {% if can_manage_details %}required{% else %}disabled{% endif %}>

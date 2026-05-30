@@ -15,6 +15,7 @@
     <div class="alert alert-danger">{{ error }}</div>
     {% endif %}
     <form method="post" action="/admin/users" class="vstack gap-3">
+      <input type="hidden" name="csrf_token" value="{{ request.cookies.get('csrf_token', '') }}">
       <div>
         <label class="form-label">Username</label>
         <input name="username" class="form-control" required minlength="3">
@@ -51,6 +52,7 @@
             <th>Username</th>
             <th>Role</th>
             <th>Status</th>
+            <th class="text-end">Actions</th>
           </tr>
         </thead>
         <tbody>
@@ -60,6 +62,9 @@
             <td>{{ user.username }}</td>
             <td>{{ user.role.title() }}</td>
             <td>{{ "Active" if user.is_active else "Inactive" }}</td>
+            <td class="text-end">
+              <a class="btn btn-sm btn-outline-secondary" href="/admin/users/{{ user.id }}/edit">Edit</a>
+            </td>
           </tr>
           {% endfor %}
         </tbody>

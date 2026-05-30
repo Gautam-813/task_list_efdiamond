@@ -129,6 +129,7 @@
         {% endif %}
         {% if can_manage_task_details(task, current_user) %}
         <form method="post" action="/tasks/{{ task.id }}/delete" data-confirm="Delete this task?">
+          <input type="hidden" name="csrf_token" value="{{ request.cookies.get('csrf_token', '') }}">
           <button class="btn btn-sm btn-outline-danger">Delete</button>
         </form>
         {% endif %}
@@ -177,6 +178,7 @@
               {% endif %}
               {% if can_manage_task_details(task, current_user) %}
               <form method="post" action="/tasks/{{ task.id }}/delete" data-confirm="Delete this task?">
+                <input type="hidden" name="csrf_token" value="{{ request.cookies.get('csrf_token', '') }}">
                 <button class="btn btn-sm btn-outline-danger">Delete</button>
               </form>
               {% endif %}

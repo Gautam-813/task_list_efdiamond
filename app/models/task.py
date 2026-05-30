@@ -39,6 +39,12 @@ class Task(Base):
         cascade="all, delete-orphan",
         order_by="TaskComment.created_at.desc()",
     )
+    activity_logs = relationship(
+        "TaskActivityLog",
+        back_populates="task",
+        cascade="all, delete-orphan",
+        order_by="TaskActivityLog.created_at.desc()",
+    )
 
 
 class TaskAttachment(Base):
@@ -71,4 +77,19 @@ class TaskComment(Base):
     )
 
     task = relationship("Task", back_populates="comments")
+    user = relationship("User")
+
+
+class TaskActivityLog(Base):
+    __tablename__ = "task_activity_logs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
+    task_id: Mapped[int] = mapped_column(ForeignKey("tasks.id"), index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("users.id"))
+    action: Mapped[str] = mapped_column(String(255))
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, default=lambda: datetime.now(timezone.utc)
+    )
+
+    task = relationship("Task", back_populates="activity_logs")
     user = relationship("User")

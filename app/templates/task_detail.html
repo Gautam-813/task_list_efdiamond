@@ -33,6 +33,7 @@
       </div>
       {% if can_contribute %}
       <form method="post" action="/tasks/{{ task.id }}/comments" class="remark-form">
+        <input type="hidden" name="csrf_token" value="{{ request.cookies.get('csrf_token', '') }}">
         <textarea name="body" class="form-control" rows="3" placeholder="Add a work update or remark" required></textarea>
         <button class="btn btn-dark">Add Remark</button>
       </form>
@@ -60,6 +61,7 @@
       </div>
       {% if can_contribute %}
       <form method="post" action="/tasks/{{ task.id }}/attachments" enctype="multipart/form-data" class="attachment-upload">
+        <input type="hidden" name="csrf_token" value="{{ request.cookies.get('csrf_token', '') }}">
         <input type="file" name="attachments" class="form-control" multiple required>
         <button class="btn btn-secondary">Upload</button>
       </form>
@@ -74,6 +76,7 @@
           </a>
           {% if can_delete_attachment(attachment, current_user) %}
           <form method="post" action="/tasks/{{ task.id }}/attachments/{{ attachment.id }}/delete" data-confirm="Delete this attachment?">
+            <input type="hidden" name="csrf_token" value="{{ request.cookies.get('csrf_token', '') }}">
             <button class="btn btn-sm btn-outline-danger">Delete</button>
           </form>
           {% endif %}
@@ -87,6 +90,27 @@
   </section>
 
   <aside class="detail-side">
+    <div class="detail-card">
+      <div class="detail-card-head">
+        <h2>Activity</h2>
+      </div>
+      {% if task.activity_logs %}
+      <div class="timeline activity-timeline">
+        {% for log in task.activity_logs %}
+        <div class="timeline-item">
+          <div class="timeline-meta">
+            <strong>{{ log.user.full_name }}</strong>
+            <span>{{ log.created_at.strftime("%d %b %Y, %I:%M %p") }}</span>
+          </div>
+          <p>{{ log.action }}</p>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+      <p class="text-secondary mb-0">No activity recorded yet.</p>
+      {% endif %}
+    </div>
+
     <div class="detail-card">
       <h2>People</h2>
       <dl class="detail-list">
@@ -107,6 +131,7 @@
     </div>
     {% if can_manage_details %}
     <form method="post" action="/tasks/{{ task.id }}/delete" data-confirm="Delete this task?" class="detail-card">
+      <input type="hidden" name="csrf_token" value="{{ request.cookies.get('csrf_token', '') }}">
       <h2>Danger Zone</h2>
       <button class="btn btn-outline-danger w-100">Delete Task</button>
     </form>

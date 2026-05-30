@@ -449,6 +449,15 @@ body {
   white-space: pre-wrap;
 }
 
+.activity-timeline .timeline-item {
+  border-left-color: #d0d7de;
+}
+
+.activity-timeline .timeline-item p {
+  font-size: 0.88rem;
+  color: #4f575e;
+}
+
 .detail-list {
   display: grid;
   gap: 10px;
