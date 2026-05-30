@@ -1,0 +1,13 @@
+__pycache__/
+*.py[cod]
+*.db
+*.sqlite
+*.sqlite3
+.env
+.venv/
+venv/
+uvicorn.pid
+*.log
+app/uploads/*
+!app/uploads/.gitkeep
+

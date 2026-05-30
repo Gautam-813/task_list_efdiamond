@@ -1,0 +1,80 @@
+{% extends "base.html" %}
+{% set title = "Edit Task" if task else "Add Task" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">{{ "Edit task" if task else "New task" }}</p>
+    <h1>{{ task.title if task else "Add task" }}</h1>
+  </div>
+  <a class="btn btn-outline-secondary" href="/tasks">Back</a>
+</div>
+
+<section class="form-surface">
+  <form method="post" action="{{ form_action }}" class="row g-3" enctype="multipart/form-data">
+    <div class="col-12">
+      <label class="form-label">Title</label>
+      <input name="title" class="form-control" value="{{ task.title if task else '' }}" {% if can_manage_details %}required{% else %}disabled{% endif %}>
+    </div>
+    <div class="col-12">
+      <label class="form-label">Description</label>
+      <textarea name="description" class="form-control" rows="4" {% if not can_manage_details %}disabled{% endif %}>{{ task.description if task else '' }}</textarea>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Assignment Date</label>
+      <input type="date" name="assignment_date" class="form-control" value="{{ task.assignment_date if task else today }}" {% if can_manage_details %}required{% else %}disabled{% endif %}>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Deadline</label>
+      <input type="date" name="deadline" class="form-control" value="{{ task.deadline if task else today }}" {% if can_manage_details %}required{% else %}disabled{% endif %}>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Assigned To</label>
+      <select name="assigned_to_id" class="form-select" {% if can_manage_details %}required{% else %}disabled{% endif %}>
+        {% for user in users %}
+        <option value="{{ user.id }}" {% if task and task.assigned_to_id == user.id %}selected{% endif %}>{{ user.full_name }} ({{ user.username }})</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div class="col-md-6">
+      <label class="form-label">Status</label>
+      <select name="task_status" class="form-select" required>
+        {% for item in statuses %}
+        <option value="{{ item }}" {% if task and task.status == item %}selected{% elif not task and item == "pending" %}selected{% endif %}>{{ item.replace("_", " ").title() }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    {% if task %}
+    <div class="col-12">
+      <label class="form-label">Assigned Person Remarks</label>
+      <textarea name="assigned_remarks" class="form-control" rows="4" {% if not can_edit_remarks %}disabled{% endif %}>{{ task.assigned_remarks or '' }}</textarea>
+    </div>
+    {% endif %}
+    {% if can_upload_attachments %}
+    <div class="col-12">
+      <label class="form-label">Upload Attachments</label>
+      <input type="file" name="attachments" class="form-control" multiple>
+    </div>
+    {% endif %}
+    {% if task and task.attachments %}
+    <div class="col-12">
+      <div class="attachment-list">
+        <div class="attachment-title">Attachments</div>
+        {% for attachment in task.attachments %}
+        <a class="attachment-item" href="/uploads/{{ task.id }}/{{ attachment.stored_filename }}" target="_blank">
+          <span>{{ attachment.original_filename }}</span>
+          <small>Uploaded by {{ attachment.uploaded_by.full_name }}</small>
+        </a>
+        {% endfor %}
+      </div>
+    </div>
+    {% endif %}
+    <div class="col-12">
+      <div class="created-by-note">Created by: {{ task.creator.full_name if task else current_user.full_name }}</div>
+    </div>
+    <div class="col-12 d-flex gap-2 justify-content-end">
+      <a class="btn btn-outline-secondary" href="/tasks">Cancel</a>
+      <button class="btn btn-dark">{{ "Save Changes" if task else "Create Task" }}</button>
+    </div>
+  </form>
+</section>
+{% endblock %}

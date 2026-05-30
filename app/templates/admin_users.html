@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% set title = "Users" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Admin</p>
+    <h1>Users</h1>
+  </div>
+</div>
+
+<div class="admin-grid">
+  <section class="form-surface">
+    <h2>Create user</h2>
+    {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="/admin/users" class="vstack gap-3">
+      <div>
+        <label class="form-label">Username</label>
+        <input name="username" class="form-control" required minlength="3">
+      </div>
+      <div>
+        <label class="form-label">Full Name</label>
+        <input name="full_name" class="form-control" required>
+      </div>
+      <div>
+        <label class="form-label">Password</label>
+        <input type="password" name="password" class="form-control" required minlength="6">
+      </div>
+      <div>
+        <label class="form-label">Role</label>
+        <select name="role" class="form-select">
+          <option value="user">User</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <div class="form-check">
+        <input class="form-check-input" type="checkbox" name="is_active" id="activeUser" checked>
+        <label class="form-check-label" for="activeUser">Active</label>
+      </div>
+      <button class="btn btn-dark">Create User</button>
+    </form>
+  </section>
+
+  <section class="task-surface">
+    <div class="table-responsive">
+      <table class="table align-middle task-table">
+        <thead>
+          <tr>
+            <th>Name</th>
+            <th>Username</th>
+            <th>Role</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for user in users %}
+          <tr>
+            <td>{{ user.full_name }}</td>
+            <td>{{ user.username }}</td>
+            <td>{{ user.role.title() }}</td>
+            <td>{{ "Active" if user.is_active else "Inactive" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}
+

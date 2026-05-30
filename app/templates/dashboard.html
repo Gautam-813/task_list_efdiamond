@@ -1,0 +1,90 @@
+{% extends "base.html" %}
+{% set title = "Tasks" %}
+{% block content %}
+<div class="page-head">
+  <div>
+    <p class="eyebrow">Task board</p>
+    <h1>All shared work</h1>
+  </div>
+  <a class="btn btn-dark" href="/tasks/new">Add Task</a>
+</div>
+
+<form method="get" action="/tasks" class="filter-bar">
+  <div class="btn-group" role="group">
+    <input type="radio" class="btn-check" name="view" id="viewAll" value="all" {% if view == "all" %}checked{% endif %}>
+    <label class="btn btn-outline-secondary" for="viewAll">All Tasks</label>
+    <input type="radio" class="btn-check" name="view" id="viewAssigned" value="assigned_to_me" {% if view == "assigned_to_me" %}checked{% endif %}>
+    <label class="btn btn-outline-secondary" for="viewAssigned">Assigned To Me</label>
+    <input type="radio" class="btn-check" name="view" id="viewCreated" value="created_by_me" {% if view == "created_by_me" %}checked{% endif %}>
+    <label class="btn btn-outline-secondary" for="viewCreated">Created By Me</label>
+  </div>
+  <select name="status_filter" class="form-select status-select">
+    <option value="">Any status</option>
+    {% for item in statuses %}
+    <option value="{{ item }}" {% if status_filter == item %}selected{% endif %}>{{ item.replace("_", " ").title() }}</option>
+    {% endfor %}
+  </select>
+  <button class="btn btn-secondary">Apply</button>
+</form>
+
+<div class="task-surface">
+  {% if tasks %}
+  <div class="table-responsive">
+    <table class="table align-middle task-table">
+      <thead>
+        <tr>
+          <th>Task</th>
+          <th>Assigned</th>
+          <th>Created By</th>
+          <th>Dates</th>
+          <th>Status</th>
+          <th>Files</th>
+          <th class="text-end">Actions</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for task in tasks %}
+        <tr>
+          <td>
+            <div class="task-title">{{ task.title }}</div>
+            <div class="task-desc">{{ task.description or "No description" }}</div>
+            {% if task.assigned_remarks %}
+            <div class="task-remarks">Remarks added</div>
+            {% endif %}
+          </td>
+          <td>{{ task.assignee.full_name }}</td>
+          <td>{{ task.creator.full_name }}</td>
+          <td>
+            <div>{{ task.assignment_date.strftime("%d %b %Y") }}</div>
+            <div class="text-secondary">Due {{ task.deadline.strftime("%d %b %Y") }}</div>
+          </td>
+          <td><span class="status-badge status-{{ task.status }}">{{ task.status.replace("_", " ").title() }}</span></td>
+          <td>{{ task.attachments|length }}</td>
+          <td class="text-end">
+            <div class="action-row">
+              {% if can_contribute_to_task(task, current_user) %}
+              <a class="btn btn-sm btn-outline-secondary" href="/tasks/{{ task.id }}/edit">Edit</a>
+              {% endif %}
+              {% if can_manage_task_details(task, current_user) %}
+              <form method="post" action="/tasks/{{ task.id }}/delete" data-confirm="Delete this task?">
+                <button class="btn btn-sm btn-outline-danger">Delete</button>
+              </form>
+              {% endif %}
+              {% if not can_contribute_to_task(task, current_user) and not can_manage_task_details(task, current_user) %}
+              <span class="text-secondary small">View only</span>
+              {% endif %}
+            </div>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty-state">
+    <h2>No tasks found</h2>
+    <p class="text-secondary">Create a task or change the current filters.</p>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

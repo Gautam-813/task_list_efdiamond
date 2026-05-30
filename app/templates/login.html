@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% set title = "Login" %}
+{% block content %}
+<section class="login-panel">
+  <div class="login-card">
+    <div class="mb-4">
+      <p class="eyebrow">Private workspace</p>
+      <h1>Sign in</h1>
+      <p class="text-secondary mb-0">Use the account created by your admin.</p>
+    </div>
+    {% if error %}
+    <div class="alert alert-danger">{{ error }}</div>
+    {% endif %}
+    <form method="post" action="/login" class="vstack gap-3">
+      <div>
+        <label class="form-label">Username</label>
+        <input name="username" class="form-control" autocomplete="username" required>
+      </div>
+      <div>
+        <label class="form-label">Password</label>
+        <input type="password" name="password" class="form-control" autocomplete="current-password" required>
+      </div>
+      <button class="btn btn-dark w-100 mt-2">Login</button>
+    </form>
+  </div>
+</section>
+{% endblock %}
+
