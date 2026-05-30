@@ -2,6 +2,7 @@ from datetime import date
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
 from fastapi.responses import RedirectResponse
+from sqlalchemy import or_
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.security import hash_password
@@ -16,6 +17,7 @@ router = APIRouter()
 
 TASK_STATUSES = ["pending", "in_progress", "completed", "blocked"]
 TASK_PRIORITIES = ["low", "medium", "high", "urgent"]
+DUE_FILTERS = ["overdue", "today", "upcoming", "completed"]
 
 
 def can_manage_task_details(task: Task, user: User) -> bool:
@@ -58,6 +60,12 @@ def attach_uploaded_files(
             db.add(attachment)
 
 
+def parse_filter_id(value: str) -> int | None:
+    if not value:
+        return None
+    return int(value) if value.isdigit() else None
+
+
 @router.get("/")
 def home():
     return RedirectResponse(url="/tasks", status_code=status.HTTP_303_SEE_OTHER)
@@ -68,6 +76,11 @@ def task_dashboard(
     request: Request,
     view: str = "all",
     status_filter: str = "",
+    priority_filter: str = "",
+    assignee_filter: str = "",
+    creator_filter: str = "",
+    due_filter: str = "",
+    q: str = "",
     db: Session = Depends(get_db),
 ):
     current_user = redirect_if_unauthenticated(request, db)
@@ -87,9 +100,46 @@ def task_dashboard(
 
     if status_filter:
         query = query.filter(Task.status == status_filter)
+    if priority_filter:
+        query = query.filter(Task.priority == priority_filter)
+    assignee_id = parse_filter_id(assignee_filter)
+    creator_id = parse_filter_id(creator_filter)
+    if assignee_id:
+        query = query.filter(Task.assigned_to_id == assignee_id)
+    if creator_id:
+        query = query.filter(Task.created_by_id == creator_id)
+    if due_filter:
+        today = date.today()
+        if due_filter == "overdue":
+            query = query.filter(Task.deadline < today, Task.status != "completed")
+        elif due_filter == "today":
+            query = query.filter(Task.deadline == today, Task.status != "completed")
+        elif due_filter == "upcoming":
+            query = query.filter(Task.deadline > today, Task.status != "completed")
+        elif due_filter == "completed":
+            query = query.filter(Task.status == "completed")
+    if q.strip():
+        search_term = f"%{q.strip()}%"
+        query = query.filter(
+            or_(Task.title.ilike(search_term), Task.description.ilike(search_term))
+        )
 
     tasks = query.order_by(Task.deadline.asc(), Task.created_at.desc()).all()
     users = db.query(User).filter(User.is_active.is_(True)).order_by(User.full_name.asc()).all()
+    today = date.today()
+    all_tasks = db.query(Task).all()
+    dashboard_counts = {
+        "total": len(all_tasks),
+        "assigned_to_me": sum(1 for task in all_tasks if task.assigned_to_id == current_user.id),
+        "overdue": sum(
+            1 for task in all_tasks if task.deadline < today and task.status != "completed"
+        ),
+        "due_today": sum(
+            1 for task in all_tasks if task.deadline == today and task.status != "completed"
+        ),
+        "pending": sum(1 for task in all_tasks if task.status == "pending"),
+        "completed": sum(1 for task in all_tasks if task.status == "completed"),
+    }
 
     return templates.TemplateResponse(
         "dashboard.html",
@@ -100,7 +150,15 @@ def task_dashboard(
             "users": users,
             "view": view,
             "status_filter": status_filter,
+            "priority_filter": priority_filter,
+            "assignee_filter": assignee_filter,
+            "creator_filter": creator_filter,
+            "due_filter": due_filter,
+            "q": q.strip(),
             "statuses": TASK_STATUSES,
+            "priorities": TASK_PRIORITIES,
+            "due_filters": DUE_FILTERS,
+            "dashboard_counts": dashboard_counts,
             "can_manage_task_details": can_manage_task_details,
             "can_contribute_to_task": can_contribute_to_task,
             "due_state": due_state,

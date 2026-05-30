@@ -9,8 +9,35 @@
   <a class="btn btn-dark" href="/tasks/new">Add Task</a>
 </div>
 
-<form method="get" action="/tasks" class="filter-bar">
-  <div class="btn-group" role="group">
+<section class="metric-grid">
+  <div class="metric-card">
+    <span>Total</span>
+    <strong>{{ dashboard_counts.total }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>Assigned To Me</span>
+    <strong>{{ dashboard_counts.assigned_to_me }}</strong>
+  </div>
+  <div class="metric-card danger">
+    <span>Overdue</span>
+    <strong>{{ dashboard_counts.overdue }}</strong>
+  </div>
+  <div class="metric-card warning">
+    <span>Due Today</span>
+    <strong>{{ dashboard_counts.due_today }}</strong>
+  </div>
+  <div class="metric-card">
+    <span>Pending</span>
+    <strong>{{ dashboard_counts.pending }}</strong>
+  </div>
+  <div class="metric-card success">
+    <span>Completed</span>
+    <strong>{{ dashboard_counts.completed }}</strong>
+  </div>
+</section>
+
+<form method="get" action="/tasks" class="dashboard-filters">
+  <div class="view-tabs" role="group">
     <input type="radio" class="btn-check" name="view" id="viewAll" value="all" {% if view == "all" %}checked{% endif %}>
     <label class="btn btn-outline-secondary" for="viewAll">All Tasks</label>
     <input type="radio" class="btn-check" name="view" id="viewAssigned" value="assigned_to_me" {% if view == "assigned_to_me" %}checked{% endif %}>
@@ -18,17 +45,98 @@
     <input type="radio" class="btn-check" name="view" id="viewCreated" value="created_by_me" {% if view == "created_by_me" %}checked{% endif %}>
     <label class="btn btn-outline-secondary" for="viewCreated">Created By Me</label>
   </div>
-  <select name="status_filter" class="form-select status-select">
-    <option value="">Any status</option>
-    {% for item in statuses %}
-    <option value="{{ item }}" {% if status_filter == item %}selected{% endif %}>{{ item.replace("_", " ").title() }}</option>
-    {% endfor %}
-  </select>
-  <button class="btn btn-secondary">Apply</button>
+
+  <div class="filter-grid">
+    <div>
+      <label class="form-label">Search</label>
+      <input name="q" class="form-control" value="{{ q }}" placeholder="Title or description">
+    </div>
+    <div>
+      <label class="form-label">Status</label>
+      <select name="status_filter" class="form-select">
+        <option value="">Any status</option>
+        {% for item in statuses %}
+        <option value="{{ item }}" {% if status_filter == item %}selected{% endif %}>{{ item.replace("_", " ").title() }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label">Priority</label>
+      <select name="priority_filter" class="form-select">
+        <option value="">Any priority</option>
+        {% for item in priorities %}
+        <option value="{{ item }}" {% if priority_filter == item %}selected{% endif %}>{{ item.title() }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label">Due</label>
+      <select name="due_filter" class="form-select">
+        <option value="">Any due date</option>
+        {% for item in due_filters %}
+        <option value="{{ item }}" {% if due_filter == item %}selected{% endif %}>{{ item.replace("_", " ").title() }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label">Assignee</label>
+      <select name="assignee_filter" class="form-select">
+        <option value="">Anyone</option>
+        {% for user in users %}
+        <option value="{{ user.id }}" {% if assignee_filter == user.id|string %}selected{% endif %}>{{ user.full_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+    <div>
+      <label class="form-label">Creator</label>
+      <select name="creator_filter" class="form-select">
+        <option value="">Anyone</option>
+        {% for user in users %}
+        <option value="{{ user.id }}" {% if creator_filter == user.id|string %}selected{% endif %}>{{ user.full_name }}</option>
+        {% endfor %}
+      </select>
+    </div>
+  </div>
+
+  <div class="filter-actions">
+    <a class="btn btn-outline-secondary" href="/tasks">Reset</a>
+    <button class="btn btn-dark">Apply Filters</button>
+  </div>
 </form>
 
 <div class="task-surface">
   {% if tasks %}
+  <div class="task-mobile-list">
+    {% for task in tasks %}
+    <article class="task-card-mobile">
+      <div class="task-card-top">
+        <a class="task-title task-link" href="/tasks/{{ task.id }}">{{ task.title }}</a>
+        <span class="priority-badge priority-{{ task.priority }}">{{ task.priority.title() }}</span>
+      </div>
+      <p>{{ task.description or "No description" }}</p>
+      <div class="mobile-meta">
+        <span>Assigned: {{ task.assignee.full_name }}</span>
+        <span>Creator: {{ task.creator.full_name }}</span>
+        <span class="due-label due-{{ due_state(task) }}">Due {{ task.deadline.strftime("%d %b %Y") }}</span>
+      </div>
+      <div class="task-card-bottom">
+        <span class="status-badge status-{{ task.status }}">{{ task.status.replace("_", " ").title() }}</span>
+        <span class="text-secondary small">{{ task.attachments|length }} file{{ "s" if task.attachments|length != 1 else "" }} &middot; {{ task.comments|length }} remark{{ "s" if task.comments|length != 1 else "" }}</span>
+      </div>
+      <div class="action-row mt-3">
+        {% if can_contribute_to_task(task, current_user) %}
+        <a class="btn btn-sm btn-outline-secondary" href="/tasks/{{ task.id }}">Open</a>
+        {% endif %}
+        {% if can_manage_task_details(task, current_user) %}
+        <form method="post" action="/tasks/{{ task.id }}/delete" data-confirm="Delete this task?">
+          <button class="btn btn-sm btn-outline-danger">Delete</button>
+        </form>
+        {% endif %}
+      </div>
+    </article>
+    {% endfor %}
+  </div>
+
   <div class="table-responsive">
     <table class="table align-middle task-table">
       <thead>
