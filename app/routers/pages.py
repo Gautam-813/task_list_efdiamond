@@ -243,6 +243,7 @@ def create_task(
     for att in created_attachments:
         log_activity(db, task, current_user, f"uploaded {att.original_filename}")
     db.commit()
+
     return RedirectResponse(url="/tasks", status_code=status.HTTP_303_SEE_OTHER)
 
 
@@ -503,6 +504,7 @@ def change_password(
     current_password: str = Form(...),
     new_password: str = Form(...),
     confirm_password: str = Form(...),
+    phone_number: str = Form(""),
     db: Session = Depends(get_db),
 ):
     current_user = redirect_if_unauthenticated(request, db)
@@ -536,6 +538,7 @@ def change_password(
         )
 
     current_user.password_hash = hash_password(new_password)
+    current_user.phone_number = phone_number.strip() or None
     db.commit()
     return templates.TemplateResponse(
         request,
@@ -588,10 +591,12 @@ def create_user(
     username: str = Form(...),
     full_name: str = Form(...),
     password: str = Form(...),
+    phone_number: str = Form(""),
     role: str = Form("user"),
     is_active: str | None = Form(None),
     db: Session = Depends(get_db),
 ):
+
     current_user = redirect_if_unauthenticated(request, db)
     if isinstance(current_user, RedirectResponse):
         return current_user
@@ -633,10 +638,12 @@ def create_user(
             status_code=400,
         )
 
+    phone = phone_number.strip() or None
     user = User(
         username=username.strip(),
         full_name=full_name.strip(),
         password_hash=hash_password(password),
+        phone_number=phone,
         role=role,
         is_active=is_active == "on",
     )
@@ -670,6 +677,7 @@ def update_user(
     request: Request,
     csrf_token: str = Form(""),
     full_name: str = Form(...),
+    phone_number: str = Form(""),
     role: str = Form(...),
     is_active: str | None = Form(None),
     new_password: str = Form(""),
@@ -697,6 +705,7 @@ def update_user(
     user.full_name = full_name.strip()
     user.role = role
     user.is_active = is_active == "on"
+    user.phone_number = phone_number.strip() or None
 
     if new_password.strip():
         pw_error = validate_password_strength(new_password.strip())

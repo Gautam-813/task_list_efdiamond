@@ -1,4 +1,9 @@
-from pydantic import BaseModel, Field
+import re
+
+from pydantic import BaseModel, Field, field_validator
+
+
+PHONE_REGEX = re.compile(r"^\+[1-9]\d{1,14}$")
 
 
 class UserForm(BaseModel):
@@ -7,4 +12,14 @@ class UserForm(BaseModel):
     password: str = Field(min_length=6, max_length=128)
     role: str = "user"
     is_active: bool = True
+    phone_number: str = ""
+
+    @field_validator("phone_number")
+    @classmethod
+    def validate_phone(cls, v: str) -> str:
+        if v and not PHONE_REGEX.match(v):
+            raise ValueError(
+                "Phone number must be in E.164 format (e.g., +919876543210)"
+            )
+        return v
 

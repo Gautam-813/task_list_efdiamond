@@ -20,6 +20,14 @@ def ensure_sqlite_schema(engine) -> None:
                 text("ALTER TABLE tasks ADD COLUMN priority VARCHAR(20) DEFAULT 'medium'")
             )
 
+    user_columns = {column["name"] for column in inspector.get_columns("users")}
+    with engine.begin() as connection:
+        if "phone_number" not in user_columns:
+            connection.execute(
+                text("ALTER TABLE users ADD COLUMN phone_number VARCHAR(20)")
+            )
+
+
     table_names = set(inspector.get_table_names())
     with engine.begin() as connection:
         if "task_activity_logs" not in table_names:
