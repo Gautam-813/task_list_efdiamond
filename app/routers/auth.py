@@ -38,7 +38,7 @@ def _check_login_rate_limit(ip: str) -> None:
 def login_page(request: Request):
     if request.cookies.get("access_token"):
         return RedirectResponse(url="/tasks", status_code=status.HTTP_303_SEE_OTHER)
-    return templates.TemplateResponse("login.html", {"request": request, "error": None, "rate_limit": False})
+    return templates.TemplateResponse(request, "login.html", {"error": None, "rate_limit": False})
 
 
 @router.post("/login")
@@ -54,8 +54,7 @@ def login(
         _check_login_rate_limit(client_ip)
     except HTTPException:
         return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "Too many login attempts. Please wait before trying again.", "rate_limit": True},
+            request, "login.html", {"error": "Too many login attempts. Please wait before trying again.", "rate_limit": True},
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
         )
 
@@ -64,8 +63,7 @@ def login(
     user = db.query(User).filter(User.username == username, User.is_active.is_(True)).first()
     if not user or not verify_password(password, user.password_hash):
         return templates.TemplateResponse(
-            "login.html",
-            {"request": request, "error": "Invalid username or password.", "rate_limit": False},
+            request, "login.html", {"error": "Invalid username or password.", "rate_limit": False},
             status_code=status.HTTP_401_UNAUTHORIZED,
         )
 

@@ -149,9 +149,9 @@ def task_dashboard(
     }
 
     return templates.TemplateResponse(
+        request,
         "dashboard.html",
         {
-            "request": request,
             "current_user": current_user,
             "tasks": tasks,
             "users": users,
@@ -180,9 +180,9 @@ def new_task_page(request: Request, db: Session = Depends(get_db)):
         return current_user
     users = db.query(User).filter(User.is_active.is_(True)).order_by(User.full_name.asc()).all()
     return templates.TemplateResponse(
+        request,
         "task_form.html",
         {
-            "request": request,
             "current_user": current_user,
             "task": None,
             "users": users,
@@ -268,9 +268,9 @@ def task_detail_page(task_id: int, request: Request, db: Session = Depends(get_d
         raise HTTPException(status_code=404, detail="Task not found")
 
     return templates.TemplateResponse(
+        request,
         "task_detail.html",
         {
-            "request": request,
             "current_user": current_user,
             "task": task,
             "can_manage_details": can_manage_task_details(task, current_user),
@@ -301,9 +301,9 @@ def edit_task_page(task_id: int, request: Request, db: Session = Depends(get_db)
 
     users = db.query(User).filter(User.is_active.is_(True)).order_by(User.full_name.asc()).all()
     return templates.TemplateResponse(
+        request,
         "task_form.html",
         {
-            "request": request,
             "current_user": current_user,
             "task": task,
             "users": users,
@@ -490,8 +490,9 @@ def change_password_page(request: Request, db: Session = Depends(get_db)):
         return current_user
 
     return templates.TemplateResponse(
+        request,
         "change_password.html",
-        {"request": request, "current_user": current_user, "error": None, "success": None},
+        {"current_user": current_user, "error": None, "success": None},
     )
 
 
@@ -511,31 +512,35 @@ def change_password(
 
     if not verify_password(current_password, current_user.password_hash):
         return templates.TemplateResponse(
+            request,
             "change_password.html",
-            {"request": request, "current_user": current_user, "error": "Current password is incorrect.", "success": None},
+            {"current_user": current_user, "error": "Current password is incorrect.", "success": None},
             status_code=400,
         )
 
     if new_password != confirm_password:
         return templates.TemplateResponse(
+            request,
             "change_password.html",
-            {"request": request, "current_user": current_user, "error": "New passwords do not match.", "success": None},
+            {"current_user": current_user, "error": "New passwords do not match.", "success": None},
             status_code=400,
         )
 
     pw_error = validate_password_strength(new_password)
     if pw_error:
         return templates.TemplateResponse(
+            request,
             "change_password.html",
-            {"request": request, "current_user": current_user, "error": pw_error, "success": None},
+            {"current_user": current_user, "error": pw_error, "success": None},
             status_code=400,
         )
 
     current_user.password_hash = hash_password(new_password)
     db.commit()
     return templates.TemplateResponse(
+        request,
         "change_password.html",
-        {"request": request, "current_user": current_user, "error": None, "success": "Password changed successfully."},
+        {"current_user": current_user, "error": None, "success": "Password changed successfully."},
     )
 
 
@@ -570,8 +575,9 @@ def users_page(request: Request, db: Session = Depends(get_db)):
 
     users = db.query(User).order_by(User.created_at.desc()).all()
     return templates.TemplateResponse(
+        request,
         "admin_users.html",
-        {"request": request, "current_user": current_user, "users": users, "error": None},
+        {"current_user": current_user, "users": users, "error": None},
     )
 
 
@@ -596,9 +602,9 @@ def create_user(
     users = db.query(User).order_by(User.created_at.desc()).all()
     if role not in ["admin", "user"]:
         return templates.TemplateResponse(
+            request,
             "admin_users.html",
             {
-                "request": request,
                 "current_user": current_user,
                 "users": users,
                 "error": "Invalid role selected.",
@@ -608,9 +614,9 @@ def create_user(
 
     if db.query(User).filter(User.username == username.strip()).first():
         return templates.TemplateResponse(
+            request,
             "admin_users.html",
             {
-                "request": request,
                 "current_user": current_user,
                 "users": users,
                 "error": "Username already exists.",
@@ -621,8 +627,9 @@ def create_user(
     pw_error = validate_password_strength(password)
     if pw_error:
         return templates.TemplateResponse(
+            request,
             "admin_users.html",
-            {"request": request, "current_user": current_user, "users": users, "error": pw_error},
+            {"current_user": current_user, "users": users, "error": pw_error},
             status_code=400,
         )
 
@@ -651,8 +658,9 @@ def edit_user_page(user_id: int, request: Request, db: Session = Depends(get_db)
         raise HTTPException(status_code=404, detail="User not found")
 
     return templates.TemplateResponse(
+        request,
         "user_edit.html",
-        {"request": request, "current_user": current_user, "edit_user": user, "error": None, "success": None},
+        {"current_user": current_user, "edit_user": user, "error": None, "success": None},
     )
 
 
@@ -680,8 +688,9 @@ def update_user(
 
     if role not in ["admin", "user"]:
         return templates.TemplateResponse(
+            request,
             "user_edit.html",
-            {"request": request, "current_user": current_user, "edit_user": user, "error": "Invalid role selected.", "success": None},
+            {"current_user": current_user, "edit_user": user, "error": "Invalid role selected.", "success": None},
             status_code=400,
         )
 
@@ -693,14 +702,16 @@ def update_user(
         pw_error = validate_password_strength(new_password.strip())
         if pw_error:
             return templates.TemplateResponse(
+                request,
                 "user_edit.html",
-                {"request": request, "current_user": current_user, "edit_user": user, "error": pw_error, "success": None},
+                {"current_user": current_user, "edit_user": user, "error": pw_error, "success": None},
                 status_code=400,
             )
         user.password_hash = hash_password(new_password.strip())
 
     db.commit()
     return templates.TemplateResponse(
+        request,
         "user_edit.html",
-        {"request": request, "current_user": current_user, "edit_user": user, "error": None, "success": "User updated successfully."},
+        {"current_user": current_user, "edit_user": user, "error": None, "success": "User updated successfully."},
     )
