@@ -6,7 +6,7 @@ from app.core.security import generate_csrf_token, make_cookie_kwargs
 from app.database import Base, SessionLocal, engine
 from app.routers import auth, pages
 from app.services.bootstrap import ensure_default_admin
-from app.services.schema import ensure_sqlite_schema
+from app.services.schema import ensure_schema
 
 
 CSRF_COOKIE = "csrf_token"
@@ -28,7 +28,7 @@ app.mount("/static", StaticFiles(directory="app/static"), name="static")
 @app.on_event("startup")
 def startup() -> None:
     Base.metadata.create_all(bind=engine)
-    ensure_sqlite_schema(engine)
+    ensure_schema(engine)
     db = SessionLocal()
     try:
         ensure_default_admin(db)
