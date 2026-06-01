@@ -1,8 +1,10 @@
-from datetime import date
+from datetime import date, datetime
+import csv
+import io
 
 from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, UploadFile, status
-from fastapi.responses import RedirectResponse
-from sqlalchemy import or_
+from fastapi.responses import RedirectResponse, StreamingResponse
+from sqlalchemy import or_, func
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.security import hash_password, validate_password_strength, verify_password
@@ -71,11 +73,6 @@ def parse_filter_id(value: str) -> int | None:
 
 def log_activity(db: Session, task: Task, user: User, action: str) -> None:
     db.add(TaskActivityLog(task_id=task.id, user_id=user.id, action=action))
-
-
-@router.get("/")
-def home():
-    return RedirectResponse(url="/tasks", status_code=status.HTTP_303_SEE_OTHER)
 
 
 @router.get("/tasks")
@@ -171,6 +168,79 @@ def task_dashboard(
             "can_contribute_to_task": can_contribute_to_task,
             "due_state": due_state,
         },
+    )
+
+
+
+@router.get("/reports")
+def reports_page(request: Request, db: Session = Depends(get_db)):
+    current_user = redirect_if_unauthenticated(request, db)
+    if isinstance(current_user, RedirectResponse):
+        return current_user
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    # Management Summary logic
+    tasks = db.query(Task).all()
+    users = db.query(User).all()
+    
+    user_stats = []
+    for user in users:
+        user_tasks = [t for t in tasks if t.assigned_to_id == user.id]
+        completed_tasks = [t for t in user_tasks if t.status == 'completed']
+        
+        # Calculate avg completion time
+        completion_times = []
+        for t in completed_tasks:
+            if t.updated_at and t.created_at:
+                delta = (t.updated_at - t.created_at).days
+                completion_times.append(delta)
+        
+        avg_days = sum(completion_times) / len(completion_times) if completion_times else 0
+        
+        user_stats.append({
+            "name": user.full_name,
+            "total": len(user_tasks),
+            "completed": len(completed_tasks),
+            "avg_days": round(avg_days, 1)
+        })
+
+    return templates.TemplateResponse(
+        request,
+        "reports.html",
+        {
+            "current_user": current_user,
+            "user_stats": user_stats
+        },
+    )
+
+
+@router.get("/reports/export-csv")
+def export_tasks_csv(request: Request, db: Session = Depends(get_db)):
+    current_user = redirect_if_unauthenticated(request, db)
+    if isinstance(current_user, RedirectResponse):
+        return current_user
+        
+    tasks = db.query(Task).all()
+    
+    output = io.StringIO()
+    writer = csv.writer(output)
+    writer.writerow(["ID", "Title", "Status", "Priority", "Assigned To", "Creator", "Created Date", "Deadline"])
+    
+    for t in tasks:
+        writer.writerow([
+            t.id, t.title, t.status, t.priority,
+            t.assignee.full_name if t.assignee else "N/A",
+            t.creator.full_name if t.creator else "N/A",
+            t.created_at.strftime("%Y-%m-%d"),
+            t.deadline.strftime("%Y-%m-%d")
+        ])
+    
+    output.seek(0)
+    return StreamingResponse(
+        io.BytesIO(output.getvalue().encode()),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=tasks_report.csv"}
     )
 
 
