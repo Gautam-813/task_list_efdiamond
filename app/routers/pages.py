@@ -145,6 +145,7 @@ def task_dashboard(
             1 for task in all_tasks if task.deadline == today and task.status != "completed"
         ),
         "pending": sum(1 for task in all_tasks if task.status == "pending"),
+        "in_progress": sum(1 for task in all_tasks if task.status == "in_progress"),
         "completed": sum(1 for task in all_tasks if task.status == "completed"),
     }
 
