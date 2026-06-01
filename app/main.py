@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from fastapi.responses import RedirectResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.base import BaseHTTPMiddleware
 
@@ -23,6 +24,11 @@ class CSRFMiddleware(BaseHTTPMiddleware):
 app = FastAPI(title="Shared Task Management App")
 app.add_middleware(CSRFMiddleware)
 app.mount("/static", StaticFiles(directory="app/static"), name="static")
+
+
+@app.get("/")
+def root():
+    return RedirectResponse(url="/tasks", status_code=302)
 
 
 @app.on_event("startup")
