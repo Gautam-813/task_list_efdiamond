@@ -182,6 +182,8 @@ def reports_page(request: Request, db: Session = Depends(get_db)):
 
     # Management Summary logic
     tasks = db.query(Task).all()
+    # Preview tasks (limited to 50)
+    preview_tasks = db.query(Task).order_by(Task.created_at.desc()).limit(50).all()
     users = db.query(User).all()
     
     user_stats = []
@@ -210,7 +212,8 @@ def reports_page(request: Request, db: Session = Depends(get_db)):
         "reports.html",
         {
             "current_user": current_user,
-            "user_stats": user_stats
+            "user_stats": user_stats,
+            "preview_tasks": preview_tasks
         },
     )
 
