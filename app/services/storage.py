@@ -1,5 +1,7 @@
 from pathlib import Path
 from uuid import uuid4
+import os
+import shutil
 
 import cloudinary
 import cloudinary.uploader
@@ -35,6 +37,10 @@ BLOCKED_EXTENSIONS: set[str] = {
     ".cgi", ".pl", ".py", ".rb",
 }
 
+# Ensure local upload directory exists
+LOCAL_UPLOAD_DIR = Path("/opt/task_list_app/uploads")
+LOCAL_UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
 cloudinary.config(
     cloud_name=settings.cloudinary_cloud_name,
     api_key=settings.cloudinary_api_key,
@@ -43,7 +49,7 @@ cloudinary.config(
 )
 
 
-def _validate_upload(file: UploadFile) -> None:
+def _validate_upload(file: UploadFile) -> int:
     if not file.filename:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="File has no name.")
 
@@ -58,49 +64,90 @@ def _validate_upload(file: UploadFile) -> None:
             detail=f"Content type '{file.content_type}' is not allowed. Allowed: {allowed}",
         )
 
-    max_bytes = settings.max_upload_size_mb * 1024 * 1024
+    # Calculate file size in bytes
     file.file.seek(0, 2)
     size = file.file.tell()
     file.file.seek(0)
+    
+    # Let's assume a hard cap, maybe 500MB? The current settings.max_upload_size_mb is 10.
+    # We need to increase that to at least 100.
+    max_bytes = 500 * 1024 * 1024 
     if size > max_bytes:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"File exceeds maximum size of {settings.max_upload_size_mb} MB.",
+            detail=f"File exceeds maximum size of 500 MB.",
         )
+    return size
+
+
+def _save_locally(file: UploadFile, filename: str) -> str:
+    stored_filename = f"{uuid4().hex}_{filename}"
+    file_path = LOCAL_UPLOAD_DIR / stored_filename
+    with file_path.open("wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+    return str(file_path)
 
 
 def save_task_attachment(file: UploadFile, task_id: int, uploader: User) -> TaskAttachment | None:
     if not file.filename:
         return None
 
-    _validate_upload(file)
-
+    size = _validate_upload(file)
     original_filename = Path(file.filename).name
-    suffix = Path(original_filename).suffix
-    public_id = f"task_{task_id}/{uuid4().hex}"
+    
+    # Hybrid Logic: Threshold 100MB
+    threshold = 100 * 1024 * 1024
+    
+    attachment_data = {
+        "task_id": task_id,
+        "uploaded_by_id": uploader.id,
+        "original_filename": original_filename,
+        "content_type": file.content_type or "application/octet-stream",
+    }
 
-    result = cloudinary.uploader.upload(
-        file.file,
-        public_id=public_id,
-        resource_type="auto",
-    )
-
-    return TaskAttachment(
-        task_id=task_id,
-        uploaded_by_id=uploader.id,
-        original_filename=original_filename,
-        stored_filename=public_id,
-        file_path=result["secure_url"],
-        content_type=file.content_type or result.get("resource_type", "application/octet-stream"),
-    )
+    if size >= threshold:
+        # Save Local
+        file_path = _save_locally(file, original_filename)
+        return TaskAttachment(
+            **attachment_data,
+            stored_filename="LOCAL",
+            file_path=file_path,
+        )
+    else:
+        # Try Cloudinary
+        public_id = f"task_{task_id}/{uuid4().hex}"
+        try:
+            result = cloudinary.uploader.upload(
+                file.file,
+                public_id=public_id,
+                resource_type="auto",
+            )
+            return TaskAttachment(
+                **attachment_data,
+                stored_filename=public_id,
+                file_path=result["secure_url"],
+            )
+        except Exception:
+            # Fallback to local
+            file_path = _save_locally(file, original_filename)
+            return TaskAttachment(
+                **attachment_data,
+                stored_filename="LOCAL",
+                file_path=file_path,
+            )
 
 
 def delete_attachment_file(attachment: TaskAttachment) -> None:
     if not attachment.stored_filename:
         return
-    for resource_type in ("image", "raw", "video"):
-        try:
-            cloudinary.uploader.destroy(attachment.stored_filename, resource_type=resource_type)
-            return
-        except Exception:
-            pass
+        
+    if attachment.stored_filename == "LOCAL":
+        if os.path.exists(attachment.file_path):
+            os.remove(attachment.file_path)
+    else:
+        for resource_type in ("image", "raw", "video"):
+            try:
+                cloudinary.uploader.destroy(attachment.stored_filename, resource_type=resource_type)
+                return
+            except Exception:
+                pass
